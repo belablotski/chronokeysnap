@@ -132,6 +132,21 @@ platform's standard config directory, under a `chronokeysnap` subfolder:
 
 If the file doesn't exist, built-in defaults are used (see above).
 
+### Creating a config file
+
+Run with `--init` to write a default config file to the platform config path
+(or wherever `--config` points), so you have something to edit instead of
+copying the example by hand:
+
+```sh
+cargo run -- --init            # writes to the default platform path
+cargo run -- --config ./my.toml --init   # writes to a custom path instead
+cargo run -- --init --force    # overwrite an existing config file
+```
+
+`--init` refuses to overwrite an existing file unless `--force` is also
+passed, and exits immediately after writing (it doesn't start the app).
+
 ## Planned project structure
 
 ```

@@ -121,6 +121,26 @@ impl Config {
         Ok(config_dir.join("chronokeysnap").join("config.toml"))
     }
 
+    /// Write the default config to `path` (creating parent dirs), refusing to
+    /// overwrite an existing file unless `force` is set.
+    pub fn init(path: &Path, force: bool) -> Result<()> {
+        if path.exists() && !force {
+            anyhow::bail!(
+                "config file already exists at {} (use --force to overwrite)",
+                path.display()
+            );
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create directory {}", parent.display()))?;
+        }
+        let contents = toml::to_string_pretty(&Self::default())
+            .context("failed to serialize default config")?;
+        std::fs::write(path, contents)
+            .with_context(|| format!("failed to write config file {}", path.display()))?;
+        Ok(())
+    }
+
     /// Resolve the local storage folder, expanding a leading `~`.
     pub fn resolved_local_folder(&self) -> PathBuf {
         expand_tilde(&self.storage.local.folder)

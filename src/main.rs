@@ -20,6 +20,14 @@ struct Args {
     /// Path to the config file (defaults to the platform config directory).
     #[arg(short, long)]
     config: Option<std::path::PathBuf>,
+
+    /// Write a default config file to the config path and exit.
+    #[arg(long)]
+    init: bool,
+
+    /// Used with --init to overwrite an existing config file.
+    #[arg(long)]
+    force: bool,
 }
 
 #[tokio::main]
@@ -35,6 +43,13 @@ async fn main() -> Result<()> {
         Some(path) => path,
         None => Config::default_path()?,
     };
+
+    if args.init {
+        Config::init(&config_path, args.force)?;
+        println!("wrote default config to {}", config_path.display());
+        return Ok(());
+    }
+
     let config = Config::load(&config_path)?;
     info!(path = %config_path.display(), "loaded config");
 
