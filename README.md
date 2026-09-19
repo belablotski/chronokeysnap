@@ -5,18 +5,24 @@ timer, and saves them to a configurable storage backend.
 
 ## Status
 
-Early design stage. This document describes the intended functionality and
-architecture before implementation begins.
+v1 implemented and manually tested: hotkey + timer triggers, cross-platform
+capture via `xcap`, and local filesystem storage, wired together in
+[src/main.rs](src/main.rs). See [Known limitations](#known-limitations) for a
+caveat found while testing on ChromeOS Crostini. Cloud storage backends
+(Azure/AWS/GCS) are still just design/roadmap items, not implemented.
 
 ## Functionality
 
 - **Trigger a capture** in one of two ways:
-  - **Hotkey** — a global, system-wide keyboard shortcut (works even when the app
-    is in the background / minimized to the tray).
-  - **Timer** — capture automatically every N seconds/minutes.
+  - **Hotkey** — a global, system-wide keyboard shortcut, registered via the
+    `global-hotkey` crate. Works while the app runs in the background (it's a
+    CLI process; there's no tray icon/GUI yet).
+  - **Timer** — capture automatically every N seconds.
   - Both triggers can be enabled at the same time.
-- **Capture the screen(s)** — the full display, a specific monitor, or (later) a
-  selected region — as an in-memory image.
+- **Capture the screen(s)** — currently captures every connected monitor on
+  each trigger (one `CaptureItem` per monitor, PNG-encoded in memory).
+  Capturing a single chosen monitor or a selected region is not implemented
+  yet.
 - **Save the screenshot** to a configured **storage backend**. The first version
   only supports the local filesystem; the storage layer is designed so that
   additional backends can be added without touching the capture/trigger logic.
@@ -64,8 +70,8 @@ Grabs the current screen contents into memory (no temp files) and produces a
 
 ```rust
 struct CaptureItem {
-    image: Vec<u8>,      // encoded image bytes (e.g. PNG)
-    format: ImageFormat,  // Png, Jpeg, ...
+    image: Vec<u8>,       // encoded image bytes
+    format: ImageFormat,   // Png (only format implemented so far)
     timestamp: DateTime<Utc>,
     monitor_id: Option<String>,
 }
@@ -84,16 +90,17 @@ trait Storage: Send + Sync {
 }
 ```
 
-- **v1 — Local filesystem**: saves each `CaptureItem` as a file in a
+- **v1 — Local filesystem** (implemented): saves each `CaptureItem` as a file in a
   configurable, pre-defined folder, named from its timestamp
-  (e.g. `2026-09-15_14-30-05.png`).
+  (e.g. `2026-09-15_14-30-05.000.png`).
 - **Planned — Azure Blob Storage**: uploads to a configured container.
 - **Planned — AWS S3**: uploads to a configured bucket.
 - **Planned — Google Cloud Storage**: uploads to a configured bucket.
 
-Each backend lives behind its own Cargo feature flag (`storage-local` on by
-default, `storage-azure`, `storage-aws`, `storage-gcs` opt-in) so cloud SDKs are
-only compiled in when needed. The active backend is selected via configuration.
+Cloud backends aren't implemented yet, and there's no Cargo feature-flag
+split currently — the crate only depends on what local storage needs. Once a
+cloud backend is added, gating each one behind its own feature flag (so
+unused cloud SDKs aren't compiled in) is the planned approach.
 
 ### Configuration
 
@@ -178,14 +185,31 @@ if the crate grows large enough to warrant it.
 
 ## Building
 
-### Linux: "Unable to find libclang"
+Requires a recent stable [Rust toolchain](https://rustup.rs/) (install via `rustup`).
 
-The `xcap` crate uses `bindgen` (for its PipeWire/Wayland support), which needs
-`libclang` at build time. On Debian/Ubuntu:
+```sh
+git clone https://github.com/belablotski/chronokeysnap.git
+cd chronokeysnap
+cargo build            # debug build, or:
+cargo build --release   # optimized binary in target/release/
+cargo run -- --init     # generate a config file to edit
+cargo run               # run it
+```
+
+### Linux prerequisites
+
+The `xcap` crate needs `libclang` (for `bindgen`) and PipeWire headers at build
+time. On Debian/Ubuntu:
 
 ```sh
 sudo apt-get install -y libclang-dev clang libpipewire-0.3-dev
 ```
+
+Other distros: install the equivalent `clang`/`libclang` and PipeWire
+development packages via your package manager (e.g. `clang`, `pipewire-devel`
+on Fedora; `clang`, `pipewire` on Arch).
+
+#### "Unable to find libclang"
 
 If the build still can't find `libclang.so` (some distros install it under a
 versioned LLVM path, e.g. `/usr/lib/llvm-14/lib`), point `bindgen` at it via a
@@ -198,6 +222,20 @@ LIBCLANG_PATH = "/usr/lib/llvm-14/lib"  # adjust to your system
 
 This file is git-ignored on purpose — the path is machine-specific and would
 break builds on other platforms if committed.
+
+### Windows prerequisites
+
+Install Rust via [rustup](https://rustup.rs/) (the `stable-x86_64-pc-windows-msvc`
+toolchain) along with the "Desktop development with C++" workload from the
+[Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio)
+(needed for the MSVC linker that Rust uses on Windows). No `libclang`/PipeWire
+setup is needed — `xcap` and `global-hotkey` use native Windows APIs on this
+platform, so no extra system dependencies are required beyond that.
+
+### macOS prerequisites
+
+Install the Xcode Command Line Tools (`xcode-select --install`) for a C
+toolchain/linker. No other system dependencies are required.
 
 ## Known limitations
 
