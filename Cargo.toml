@@ -12,7 +12,7 @@ dirs = "7.0.0"
 global-hotkey = "0.8.0"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 serde = { version = "1.0.229", features = ["derive"] }
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "signal", "fs", "sync"] }
 toml = "1.1.6"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

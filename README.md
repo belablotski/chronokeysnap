@@ -54,7 +54,7 @@ event when a capture should happen. This keeps the capture/storage pipeline
 agnostic of *why* it was invoked.
 
 - **Hotkey**: a global keyboard shortcut registered with the OS, configurable
-  (e.g. `Ctrl+Shift+S`).
+  (e.g. `Ctrl+Alt+Shift+S`).
 - **Timer**: a fixed interval, configurable (e.g. every 60s).
 
 ### Capture
@@ -102,11 +102,11 @@ A single config file (TOML) controls trigger and storage settings, e.g.:
 ```toml
 [trigger.hotkey]
 enabled = true
-combination = "Ctrl+Shift+S"
+combination = "Ctrl+Alt+Shift+S"
 
 [trigger.timer]
-enabled = false
-interval_seconds = 60
+enabled = true
+interval_seconds = 10
 
 [storage]
 backend = "local"
@@ -118,6 +118,19 @@ folder = "~/Pictures/ChronoKeySnap"
 Future backend sections (`[storage.azure]`, `[storage.aws]`, `[storage.gcs]`)
 will hold backend-specific settings (container/bucket name, region, credential
 references, etc.) without changing the overall shape of the config.
+
+### Configuration file location
+
+When `--config <path>` isn't passed, the app looks for `config.toml` in the
+platform's standard config directory, under a `chronokeysnap` subfolder:
+
+| OS      | Path                                                |
+|---------|------------------------------------------------------|
+| Linux   | `~/.config/chronokeysnap/config.toml`                |
+| macOS   | `~/Library/Application Support/chronokeysnap/config.toml` |
+| Windows | `%APPDATA%\chronokeysnap\config.toml` (typically `C:\Users\<user>\AppData\Roaming\chronokeysnap\config.toml`) |
+
+If the file doesn't exist, built-in defaults are used (see above).
 
 ## Planned project structure
 
@@ -147,6 +160,61 @@ if the crate grows large enough to warrant it.
 - Config parsing: `serde`, `toml`
 - CLI: `clap`
 - Logging: `tracing`
+
+## Building
+
+### Linux: "Unable to find libclang"
+
+The `xcap` crate uses `bindgen` (for its PipeWire/Wayland support), which needs
+`libclang` at build time. On Debian/Ubuntu:
+
+```sh
+sudo apt-get install -y libclang-dev clang libpipewire-0.3-dev
+```
+
+If the build still can't find `libclang.so` (some distros install it under a
+versioned LLVM path, e.g. `/usr/lib/llvm-14/lib`), point `bindgen` at it via a
+*local, untracked* `.cargo/config.toml`:
+
+```toml
+[env]
+LIBCLANG_PATH = "/usr/lib/llvm-14/lib"  # adjust to your system
+```
+
+This file is git-ignored on purpose — the path is machine-specific and would
+break builds on other platforms if committed.
+
+## Known limitations
+
+### Global hotkeys don't work under ChromeOS Crostini (sommelier)
+
+The `global-hotkey` crate has no native Wayland backend (only X11, Windows,
+macOS) — it registers hotkeys via `XGrabKey` against an X11/XWayland server.
+On ChromeOS's Crostini container, the compositor (`sommelier`) runs apps as
+native Wayland/ChromeOS surfaces, not XWayland clients (verified with
+`xwininfo -root -tree`: only Sommelier's own internal windows exist on the X
+display). Keystrokes typed into a native Wayland terminal or editor never
+enter the X11 protocol layer at all, so the grab has no way to see them,
+regardless of which window has focus.
+
+This is an environment/library limitation, not an app bug — on a real X11
+desktop, or on macOS/Windows (which use native OS APIs instead of X11), the
+hotkey trigger works normally. If you're developing/testing inside Crostini,
+use the **timer trigger** instead (`[trigger.timer].enabled = true`), since it
+doesn't depend on the window server at all.
+
+### Screen capture also fails under ChromeOS Crostini (sommelier)
+
+Even with the timer trigger, actual capture fails on this environment too:
+`xcap`'s Wayland backend (`libwayshot`) requires the compositor to implement
+the `zxdg_output_manager_v1` protocol to enumerate monitors, which `sommelier`
+does not. Every capture attempt logs an error (and the underlying library
+panics internally rather than returning an error — the app catches this via
+`spawn_blocking` so it doesn't crash, but the capture itself never succeeds).
+
+This is a compositor limitation of this specific dev environment, not an app
+bug. On a real Linux desktop (X11 or a standards-compliant Wayland compositor
+like GNOME/KDE), macOS, or Windows, capture should work normally.
 
 ## License
 

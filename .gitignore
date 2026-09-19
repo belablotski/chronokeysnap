@@ -24,3 +24,6 @@ target
 # Added by cargo
 
 /target
+
+# Machine-local cargo env overrides (e.g. LIBCLANG_PATH), not portable across machines/OSes
+/.cargo/
