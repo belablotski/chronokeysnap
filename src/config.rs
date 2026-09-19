@@ -19,6 +19,8 @@ pub struct TriggerConfig {
     pub hotkey: HotkeyConfig,
     #[serde(default)]
     pub timer: TimerConfig,
+    #[serde(default)]
+    pub manual: ManualConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +49,24 @@ impl Default for TimerConfig {
         Self {
             enabled: true,
             interval_seconds: 10,
+        }
+    }
+}
+
+/// A loopback-only "capture now" trigger: run with `--capture` to request one
+/// capture from an already-running instance. Exists for platforms where OS-level
+/// global hotkeys don't work (see README's "Known limitations").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManualConfig {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+impl Default for ManualConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 47812,
         }
     }
 }

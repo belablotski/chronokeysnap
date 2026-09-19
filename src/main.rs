@@ -28,6 +28,11 @@ struct Args {
     /// Used with --init to overwrite an existing config file.
     #[arg(long)]
     force: bool,
+
+    /// Request one capture from an already-running instance (via the manual
+    /// trigger's loopback port) and exit. Requires [trigger.manual].enabled.
+    #[arg(long)]
+    capture: bool,
 }
 
 #[tokio::main]
@@ -51,6 +56,11 @@ async fn main() -> Result<()> {
     }
 
     let config = Config::load(&config_path)?;
+
+    if args.capture {
+        return request_manual_capture(&config).await;
+    }
+
     info!(path = %config_path.display(), "loaded config");
 
     let storage: Arc<dyn Storage> = match config.storage.backend {
@@ -69,6 +79,8 @@ async fn main() -> Result<()> {
         hotkey_enabled = config.trigger.hotkey.enabled,
         hotkey = %config.trigger.hotkey.combination,
         timer_enabled = config.trigger.timer.enabled,
+        manual_enabled = config.trigger.manual.enabled,
+        manual_port = config.trigger.manual.port,
         "triggers started, waiting for capture events (Ctrl+C to quit)"
     );
 
@@ -98,10 +110,32 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Connect to a running instance's manual trigger port and request one capture.
+async fn request_manual_capture(config: &Config) -> Result<()> {
+    if !config.trigger.manual.enabled {
+        anyhow::bail!(
+            "manual trigger is disabled in config (set [trigger.manual].enabled = true)"
+        );
+    }
+    let addr = (std::net::Ipv4Addr::LOCALHOST, config.trigger.manual.port);
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to connect to manual trigger on 127.0.0.1:{} (is chronokeysnap running?)",
+                config.trigger.manual.port
+            )
+        })?;
+    tokio::io::AsyncWriteExt::write_all(&mut stream, b"capture\n").await?;
+    println!("requested a capture on 127.0.0.1:{}", config.trigger.manual.port);
+    Ok(())
+}
+
 async fn on_capture_event(storage: &Arc<dyn Storage>, event: trigger::CaptureEvent) {
     match event {
         trigger::CaptureEvent::Hotkey => info!("hotkey pressed, capturing screenshot"),
         trigger::CaptureEvent::Timer => info!("timer tick, capturing screenshot"),
+        trigger::CaptureEvent::Manual => info!("manual capture requested, capturing screenshot"),
     }
 
     // capture_all_monitors is synchronous and can be slow (or panic, e.g. some
@@ -111,7 +145,7 @@ async fn on_capture_event(storage: &Arc<dyn Storage>, event: trigger::CaptureEve
     let items = match captured {
         Ok(Ok(items)) => items,
         Ok(Err(err)) => {
-            error!(error = %err, "failed to capture screenshot");
+            error!(error = ?err, "failed to capture screenshot");
             return;
         }
         Err(join_err) => {
@@ -123,7 +157,7 @@ async fn on_capture_event(storage: &Arc<dyn Storage>, event: trigger::CaptureEve
     for item in items {
         match storage.save(&item).await {
             Ok(location) => info!(location = %location.0, "saved screenshot"),
-            Err(err) => error!(error = %err, "failed to save screenshot"),
+            Err(err) => error!(error = ?err, "failed to save screenshot"),
         }
     }
 }

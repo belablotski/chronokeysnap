@@ -1,6 +1,7 @@
-//! Capture triggers: hotkey and timer, both feeding the same event channel.
+//! Capture triggers: hotkey, timer, and manual, all feeding the same event channel.
 
 pub mod hotkey;
+pub mod manual;
 pub mod timer;
 
 use tokio::sync::mpsc;
@@ -12,10 +13,11 @@ use crate::config::TriggerConfig;
 pub enum CaptureEvent {
     Hotkey,
     Timer,
+    Manual,
 }
 
 /// Start all enabled triggers, returning a channel that receives a `CaptureEvent`
-/// each time a hotkey is pressed or the timer fires.
+/// each time a hotkey is pressed, the timer fires, or a manual capture is requested.
 pub fn start(config: &TriggerConfig) -> anyhow::Result<mpsc::Receiver<CaptureEvent>> {
     let (tx, rx) = mpsc::channel(16);
 
@@ -24,6 +26,9 @@ pub fn start(config: &TriggerConfig) -> anyhow::Result<mpsc::Receiver<CaptureEve
     }
     if config.timer.enabled {
         timer::spawn(config.timer.interval_seconds, tx.clone());
+    }
+    if config.manual.enabled {
+        manual::spawn(config.manual.port, tx.clone())?;
     }
 
     Ok(rx)
